@@ -65,23 +65,40 @@ class DeterministicVolumeSlicerAdapter implements ISlicerAdapter {
       scaledY <= BAMBU_BUILD_VOLUME_MM.y &&
       scaledZ <= BAMBU_BUILD_VOLUME_MM.z;
 
-    // Surface-shell + sparse infill mass scales with exponent ~2.15 (walls scale ~quadratically, infill ~cubically)
-    const normalizedScale = input.targetHeightMm / 120;
-    const infillMultiplier = 0.85 + (input.infillPercent / 15) * 0.15;
-    const materialSpec = MATERIALS[input.material];
-    const densityFactor = materialSpec.densityGPerCm3 / 1.24;
+    // 1. Scale raw mesh volume (cm3) by actual 3D scale factor (1.0 when unscaled)
+    const scaledVolumeCm3 = Math.max(0.8, input.baseVolumeCm3 * Math.pow(scaleFactor, 3));
+    const boundingVolumeCm3 = Math.max(
+      1,
+      (scaledX * scaledY * scaledZ) / 1000
+    );
 
-    // Base mass at 120mm reference height (~118g model + ~17g tree support = ~135g total)
-    const volumeRatio = input.baseVolumeCm3 / 245.0;
+    // 2. Compactness / fill ratio of the 3D mesh within its bounding box:
+    //    - Thin-walled CAD parts (boxes, cookie cutters, brackets, tubes, vases) have a low
+    //      mesh-to-bounding-box ratio (< 0.35), meaning their geometry is already mostly walls
+    //      where Bambu Studio prints 2-3 solid perimeters + top/bottom shells (75%-92% solid).
+    //    - Chunky solid meshes (statues, figurines) have a higher ratio, where outer walls/shells
+    //      make up ~45% of the volume and the interior 55% is printed at infillPercent.
+    const compactness = Math.min(1, scaledVolumeCm3 / boundingVolumeCm3);
+    const shellFraction = compactness < 0.28 ? 0.86 : compactness < 0.5 ? 0.68 : 0.45;
+    const coreFraction = 1 - shellFraction;
+    const infillRatio = Math.min(1, Math.max(0.05, input.infillPercent / 100));
+
+    // Effective plastic volume fraction inside the mesh + layer-height flow factor
+    const effectiveVolumeCm3 =
+      scaledVolumeCm3 * (shellFraction + coreFraction * infillRatio);
+
+    const materialSpec = MATERIALS[input.material];
+    const brimAndPurgeGrams = 3.2; // Bambu Lab X1C prime line, purge & outer brim
+
     const rawModelGrams =
-      118 * Math.pow(normalizedScale, 2.15) * volumeRatio * infillMultiplier * densityFactor;
+      effectiveVolumeCm3 * materialSpec.densityGPerCm3 + brimAndPurgeGrams;
 
     const supportRequired = input.overhangRatio > 0.14;
     const supportGrams = supportRequired
-      ? Math.max(2, Number((rawModelGrams * input.overhangRatio * 0.52).toFixed(1)))
+      ? Math.max(2, Number((rawModelGrams * input.overhangRatio * 0.42).toFixed(1)))
       : 0;
 
-    // Total filamentGrams includes model + tree supports
+    // Total filamentGrams includes model + brim/purge + tree supports
     const filamentGrams = Math.max(8, Math.round(rawModelGrams + supportGrams));
 
     const layerCount = Math.max(15, Math.ceil(scaledZ / layerHeightMm));

@@ -118,6 +118,10 @@ export function SpecSheetCard() {
   )[0];
   const durationFormatted = formatPrintDuration(activeQuote.printTimeSeconds);
   const netPriceAfterCredit = Math.max(49, activeQuote.calculatedPriceNok - aiCreditNok);
+  const orderQuantity = activeQuote.pricingBreakdown.quantity ?? 1;
+  const unitPriceNok = activeQuote.pricingBreakdown.unitPriceNok ?? activeQuote.calculatedPriceNok;
+  const batchSavingsNok = activeQuote.pricingBreakdown.batchSavingsNok ?? 0;
+  const platesRequired = activeQuote.pricingBreakdown.platesRequired ?? 1;
 
   const handleConfirmOrder = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -240,13 +244,13 @@ export function SpecSheetCard() {
             <div className="rounded-xl border border-zinc-200/70 bg-[#F6F6F3]/70 p-3.5">
               <span className="flex items-center gap-1.5 text-xs font-medium text-zinc-500">
                 <Layers className="h-3.5 w-3.5 text-zinc-400" />
-                Presisjon
+                Antall & Presisjon
               </span>
               <span className="mt-1 block font-mono text-base font-bold text-zinc-900">
-                {activeQuote.layerCount} lag
+                {orderQuantity} stk ({unitPriceNok} kr/stk)
               </span>
               <span className="mt-0.5 block text-[11px] text-zinc-500">
-                {activeQuote.layerHeightMm.toFixed(2)} mm laghøyde
+                {activeQuote.layerCount} lag • {activeQuote.layerHeightMm.toFixed(2)} mm laghøyde
               </span>
             </div>
           </div>
@@ -255,14 +259,17 @@ export function SpecSheetCard() {
           <div className="rounded-xl border border-zinc-200/90 bg-[#F6F6F3]/60 p-5">
             <div className="flex items-center justify-between border-b border-zinc-200/80 pb-2.5">
               <span className="text-xs font-bold text-zinc-900">
-                Slik er prisen regnet ut (engangspris)
+                Slik er prisen regnet ut ({orderQuantity} stk)
               </span>
               <span className="font-mono text-[11px] text-zinc-500">Inkl. mva</span>
             </div>
 
             <div className="mt-3.5 space-y-2 font-mono text-xs tabular-nums text-zinc-600">
               <div className="flex items-center justify-between">
-                <span>AI-generering, oppstart & etterarbeid</span>
+                <span>
+                  Oppstart & byggeplate ({platesRequired} Bambu X1C-plate
+                  {platesRequired > 1 ? 'r' : ''})
+                </span>
                 <span className="font-semibold text-zinc-900">
                   {activeQuote.pricingBreakdown.baseForgeFeeNok} kr
                 </span>
@@ -270,7 +277,7 @@ export function SpecSheetCard() {
 
               <div className="flex items-center justify-between">
                 <span>
-                  Plastforbruk ({activeQuote.filamentGrams}g {filamentSpec.shortLabel})
+                  Plastforbruk ({activeQuote.filamentGrams}g {filamentSpec.shortLabel} totalt)
                 </span>
                 <span className="font-semibold text-zinc-900">
                   {activeQuote.pricingBreakdown.materialCostNok} kr
@@ -284,6 +291,13 @@ export function SpecSheetCard() {
                 </span>
               </div>
 
+              {batchSavingsNok > 0 && (
+                <div className="flex items-center justify-between rounded-lg bg-emerald-50 px-2.5 py-1.5 font-semibold text-emerald-800">
+                  <span>Samtrykksrabatt ({orderQuantity} stk på felles plate)</span>
+                  <span>Sparer {batchSavingsNok} kr</span>
+                </div>
+              )}
+
               {aiCreditNok > 0 && (
                 <div className="flex items-center justify-between rounded-lg bg-emerald-50 px-2.5 py-1.5 font-semibold text-emerald-800">
                   <span>Fradrag for kjøpte AI-forsøk</span>
@@ -292,7 +306,16 @@ export function SpecSheetCard() {
               )}
 
               <div className="flex items-baseline justify-between border-t border-zinc-200 pt-3">
-                <span className="font-sans text-sm font-bold text-zinc-900">Pris for modellen</span>
+                <div>
+                  <span className="font-sans text-sm font-bold text-zinc-900">
+                    Totalpris ({orderQuantity} stk)
+                  </span>
+                  {orderQuantity > 1 && (
+                    <span className="ml-2 font-mono text-[11px] text-zinc-500">
+                      ({unitPriceNok} kr/stk)
+                    </span>
+                  )}
+                </div>
                 <span className="text-2xl font-bold tracking-tight text-zinc-900">
                   {netPriceAfterCredit} kr
                   {isSlicing && (

@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
-import { OrbitControls, Grid, Html, Edges } from '@react-three/drei';
+import { OrbitControls, Grid, Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { Box, Eye, Grid as GridIcon, Loader2, RotateCw } from 'lucide-react';
 import {
@@ -269,6 +269,21 @@ function ProceduralCadModel({
 
   const edgeColor = colorHex.toUpperCase() === '#111111' ? '#3F3F46' : '#18181B';
 
+  const customEdgesGeometry = useMemo(() => {
+    if (!customGeometry) return null;
+    try {
+      return new THREE.EdgesGeometry(customGeometry, 28);
+    } catch {
+      return null;
+    }
+  }, [customGeometry]);
+
+  useEffect(() => {
+    return () => {
+      customEdgesGeometry?.dispose();
+    };
+  }, [customEdgesGeometry]);
+
   return (
     <group ref={groupRef} position={[0, 0, 0]}>
       {/* Subtle Brim Ring on build plate */}
@@ -288,24 +303,26 @@ function ProceduralCadModel({
       {/* Scaled Model Group */}
       <group scale={[widthU, heightU, depthU]}>
         {customGeometry ? (
-          <mesh geometry={customGeometry} material={sharedMaterial} castShadow receiveShadow>
-            <Edges color={edgeColor} threshold={28} />
-          </mesh>
+          <group key={customGeometry.uuid}>
+            <mesh geometry={customGeometry} material={sharedMaterial} castShadow receiveShadow />
+            {customEdgesGeometry && !wireframe && (
+              <lineSegments geometry={customEdgesGeometry}>
+                <lineBasicMaterial color={edgeColor} transparent opacity={0.45} />
+              </lineSegments>
+            )}
+          </group>
         ) : (
           <>
             {preset === 'MECH_TURRET' && (
               <group>
                 <mesh position={[0, 0.08, 0]} material={sharedMaterial} castShadow receiveShadow>
                   <cylinderGeometry args={[0.48, 0.5, 0.16, 8]} />
-                  <Edges color={edgeColor} threshold={25} />
                 </mesh>
                 <mesh position={[0, 0.26, 0]} material={sharedMaterial} castShadow receiveShadow>
                   <cylinderGeometry args={[0.34, 0.4, 0.2, 16]} />
-                  <Edges color={edgeColor} threshold={25} />
                 </mesh>
                 <mesh position={[0, 0.56, 0]} material={sharedMaterial} castShadow receiveShadow>
                   <boxGeometry args={[0.68, 0.42, 0.74]} />
-                  <Edges color={edgeColor} threshold={20} />
                 </mesh>
                 <mesh
                   position={[-0.16, 0.58, 0.42]}
@@ -314,7 +331,6 @@ function ProceduralCadModel({
                   castShadow
                 >
                   <cylinderGeometry args={[0.08, 0.08, 0.36, 12]} />
-                  <Edges color={edgeColor} threshold={25} />
                 </mesh>
                 <mesh
                   position={[0.16, 0.58, 0.42]}
@@ -323,11 +339,9 @@ function ProceduralCadModel({
                   castShadow
                 >
                   <cylinderGeometry args={[0.08, 0.08, 0.36, 12]} />
-                  <Edges color={edgeColor} threshold={25} />
                 </mesh>
                 <mesh position={[0, 0.88, -0.05]} material={sharedMaterial} castShadow>
                   <boxGeometry args={[0.36, 0.24, 0.38]} />
-                  <Edges color={edgeColor} threshold={20} />
                 </mesh>
               </group>
             )}
@@ -336,11 +350,9 @@ function ProceduralCadModel({
               <group>
                 <mesh position={[0, 0.35, 0]} material={sharedMaterial} castShadow receiveShadow>
                   <cylinderGeometry args={[0.5, 0.5, 0.7, 16]} />
-                  <Edges color={edgeColor} threshold={18} />
                 </mesh>
                 <mesh position={[0, 0.65, 0]} material={sharedMaterial} castShadow>
                   <cylinderGeometry args={[0.2, 0.2, 0.7, 6]} />
-                  <Edges color={edgeColor} threshold={15} />
                 </mesh>
                 {[0, 1, 2, 3].map((idx) => {
                   const angle = (idx * Math.PI) / 2;
@@ -352,7 +364,6 @@ function ProceduralCadModel({
                       castShadow
                     >
                       <cylinderGeometry args={[0.12, 0.12, 0.95, 10]} />
-                      <Edges color={edgeColor} threshold={20} />
                     </mesh>
                   );
                 })}
@@ -363,15 +374,12 @@ function ProceduralCadModel({
               <group>
                 <mesh position={[0, 0.12, 0]} material={sharedMaterial} castShadow receiveShadow>
                   <cylinderGeometry args={[0.36, 0.46, 0.24, 12]} />
-                  <Edges color={edgeColor} threshold={20} />
                 </mesh>
                 <mesh position={[0, 0.56, 0]} material={sharedMaterial} castShadow>
                   <dodecahedronGeometry args={[0.44, 1]} />
-                  <Edges color={edgeColor} threshold={15} />
                 </mesh>
                 <mesh position={[0, 0.58, 0.28]} material={sharedMaterial} castShadow>
                   <boxGeometry args={[0.66, 0.22, 0.32]} />
-                  <Edges color={edgeColor} threshold={20} />
                 </mesh>
                 <mesh
                   position={[-0.4, 0.68, -0.05]}
@@ -379,7 +387,6 @@ function ProceduralCadModel({
                   material={sharedMaterial}
                 >
                   <boxGeometry args={[0.08, 0.42, 0.24]} />
-                  <Edges color={edgeColor} threshold={20} />
                 </mesh>
                 <mesh
                   position={[0.4, 0.68, -0.05]}
@@ -387,7 +394,6 @@ function ProceduralCadModel({
                   material={sharedMaterial}
                 >
                   <boxGeometry args={[0.08, 0.42, 0.24]} />
-                  <Edges color={edgeColor} threshold={20} />
                 </mesh>
               </group>
             )}
@@ -396,11 +402,9 @@ function ProceduralCadModel({
               <group>
                 <mesh position={[0, 0.09, 0]} material={sharedMaterial} castShadow receiveShadow>
                   <boxGeometry args={[0.96, 0.18, 0.88]} />
-                  <Edges color={edgeColor} threshold={20} />
                 </mesh>
                 <mesh position={[0, 0.52, -0.32]} material={sharedMaterial} castShadow>
                   <boxGeometry args={[0.96, 0.92, 0.22]} />
-                  <Edges color={edgeColor} threshold={20} />
                 </mesh>
                 <mesh
                   position={[-0.36, 0.42, 0.04]}
@@ -409,7 +413,6 @@ function ProceduralCadModel({
                   castShadow
                 >
                   <boxGeometry args={[0.14, 0.68, 0.68]} />
-                  <Edges color={edgeColor} threshold={20} />
                 </mesh>
                 <mesh
                   position={[0.36, 0.42, 0.04]}
@@ -418,7 +421,6 @@ function ProceduralCadModel({
                   castShadow
                 >
                   <boxGeometry args={[0.14, 0.68, 0.68]} />
-                  <Edges color={edgeColor} threshold={20} />
                 </mesh>
               </group>
             )}
@@ -512,7 +514,6 @@ function BambuBuildPlateScene({
             transparent
             opacity={1}
           />
-          <Edges color="#3F3F46" />
         </mesh>
 
         {/* Front Bambu Lab Nozzle Calibration Tab */}

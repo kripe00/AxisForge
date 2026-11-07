@@ -58,6 +58,7 @@ const INITIAL_QUOTE: SliceQuoteDocument = {
   layerQuality: '0.20mm',
   layerHeightMm: 0.2,
   infillPercent: 15,
+  quantity: 1,
   filamentGrams: 135,
   supportGrams: 16.2,
   printTimeSeconds: 9900,
@@ -75,6 +76,10 @@ const INITIAL_QUOTE: SliceQuoteDocument = {
     finalPriceNok: 349,
     shippingNok: 79,
     timeMultiplier: 1.0,
+    quantity: 1,
+    unitPriceNok: 349,
+    batchSavingsNok: 0,
+    platesRequired: 1,
   },
   sliced3mfStoragePath: 'slices/dev-operator-01/quote_seed_x1c_01/plate_1.3mf',
   expiresAt: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
@@ -99,10 +104,11 @@ interface ForgeState {
   scadFileName: string | null;
   scadSource: string | null;
   scadParameters: ScadParameterDef[];
-  scadValues: Record<string, number>;
+  scadValues: Record<string, number | string>;
   isCompilingScad: boolean;
   scadAiModelTier: 'flash' | 'pro';
   lastScadAiModelUsed: string | null;
+  lastAiActionSummary: string | null;
 
   // Active generation / catalog / parametric job
   activeJob: GenerationJobDocument;
@@ -119,6 +125,7 @@ interface ForgeState {
   colorHex: string;
   layerQuality: LayerQualityKey;
   infillPercent: number;
+  quantity: number;
 
   // 3D viewport visual toggles
   wireframeMode: boolean;
@@ -157,10 +164,10 @@ interface ForgeState {
       overhangRatio?: number;
     }
   ) => Promise<void>;
-  setScadParamValue: (name: string, value: number) => void;
+  setScadParamValue: (name: string, value: number | string) => void;
   setScadAiModelTier: (tier: 'flash' | 'pro') => void;
-  compileActiveScad: (uid: string) => Promise<void>;
-  generateScadFromPrompt: (prompt: string, uid: string) => Promise<void>;
+  compileActiveScad: (uid: string, fastPreview?: boolean) => Promise<void>;
+  generateScadFromPrompt: (prompt: string, uid: string, modifyCurrent?: boolean) => Promise<void>;
   setPromptInput: (prompt: string) => void;
   setReferenceImageName: (name: string | null) => void;
   setTargetHeightMm: (heightMm: number) => void;
@@ -168,6 +175,7 @@ interface ForgeState {
   setColorHex: (colorHex: string) => void;
   setLayerQuality: (layerQuality: LayerQualityKey) => void;
   setInfillPercent: (infillPercent: number) => void;
+  setQuantity: (quantity: number) => void;
   setUserQuota: (freeGenerationsRemaining: number, aiCreditNok: number) => void;
   toggleWireframeMode: () => void;
   toggleBoundingBox: () => void;
@@ -201,6 +209,7 @@ export const useForgeStore = create<ForgeState>((set, get) => ({
   isCompilingScad: false,
   scadAiModelTier: 'flash',
   lastScadAiModelUsed: null,
+  lastAiActionSummary: null,
 
   activeJob: INITIAL_JOB,
   promptInput: 'Armored industrial hex-mech turret with heavy cooling vents and mounting flange',
@@ -214,6 +223,7 @@ export const useForgeStore = create<ForgeState>((set, get) => ({
   colorHex: '#FF5500',
   layerQuality: '0.20mm',
   infillPercent: 15,
+  quantity: 1,
 
   wireframeMode: false,
   showBoundingBox: true,
@@ -229,10 +239,7 @@ export const useForgeStore = create<ForgeState>((set, get) => ({
 
   getComputedDimensionsMm: () => {
     const { activeJob, targetHeightMm } = get();
-    if (
-      (activeJob.parametricTemplateId || activeJob.scadSource) &&
-      activeJob.boundingBoxMm.z === targetHeightMm
-    ) {
+    if (activeJob.parametricTemplateId || activeJob.scadSource || activeJob.fileFormat === 'scad') {
       return activeJob.boundingBoxMm;
     }
     const base = activeJob.boundingBoxMm;
@@ -244,7 +251,13 @@ export const useForgeStore = create<ForgeState>((set, get) => ({
     };
   },
 
-  setCurrentStep: (currentStep) => set({ currentStep }),
+  setCurrentStep: (currentStep) => {
+    set({ currentStep });
+    // Upgrade .scad preview to full $fn resolution when entering Step 3 (Order)
+    if (currentStep === 3 && get().scadSource && get().activeJob.fileFormat === 'scad') {
+      void get().compileActiveScad(get().activeJob.uid || 'dev-operator-01', false);
+    }
+  },
 
   setStep1Mode: (step1Mode, uid = 'dev-operator-01') => {
     set({ step1Mode });
@@ -361,9 +374,9 @@ export const useForgeStore = create<ForgeState>((set, get) => ({
     }
   ) => {
     const parsedParams = parseScadParameters(scadSource);
-    const initialValues: Record<string, number> = {};
+    const initialValues: Record<string, number | string> = {};
     for (const p of parsedParams) {
-      initialValues[p.name] = p.defaultValue;
+      initialValues[p.name] = p.type === 'string' ? (p.defaultString ?? '') : p.defaultValue;
     }
 
     const displayTitle =
@@ -388,7 +401,7 @@ export const useForgeStore = create<ForgeState>((set, get) => ({
       scadParameters: parsedParams,
       scadValues: initialValues,
       errorBanner: null,
-      targetHeightMm: Math.min(250, Math.max(15, Math.round(nextBoundingBox.z))),
+      targetHeightMm: Math.min(250, Math.max(2, Math.round(nextBoundingBox.z))),
       activeJob: {
         ...get().activeJob,
         id: `job_scad_${fileName.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase()}`,
@@ -414,7 +427,7 @@ export const useForgeStore = create<ForgeState>((set, get) => ({
     }
   },
 
-  setScadParamValue: (name: string, value: number) => {
+  setScadParamValue: (name: string, value: number | string) => {
     set((state) => ({
       scadValues: {
         ...state.scadValues,
@@ -425,7 +438,7 @@ export const useForgeStore = create<ForgeState>((set, get) => ({
 
   setScadAiModelTier: (scadAiModelTier: 'flash' | 'pro') => set({ scadAiModelTier }),
 
-  compileActiveScad: async (uid: string) => {
+  compileActiveScad: async (uid: string, fastPreview = true) => {
     const { scadSource, scadParameters, scadValues, scadFileName, activeJob } = get();
     if (!scadSource) return;
 
@@ -433,10 +446,11 @@ export const useForgeStore = create<ForgeState>((set, get) => ({
 
     try {
       // Only pass -D overrides for parameters that have been modified from their file default
-      const modifiedParams: Record<string, number> = {};
+      const modifiedParams: Record<string, number | string> = {};
       for (const def of scadParameters) {
         const currentVal = scadValues[def.name];
-        if (currentVal !== undefined && currentVal !== def.defaultValue) {
+        const defVal = def.type === 'string' ? (def.defaultString ?? '') : def.defaultValue;
+        if (currentVal !== undefined && currentVal !== defVal) {
           modifiedParams[def.name] = currentVal;
         }
       }
@@ -447,7 +461,7 @@ export const useForgeStore = create<ForgeState>((set, get) => ({
         body: JSON.stringify({
           scadSource,
           parameters: modifiedParams,
-          fastPreview: true,
+          fastPreview,
         }),
       });
 
@@ -468,7 +482,7 @@ export const useForgeStore = create<ForgeState>((set, get) => ({
         .map(([k, v]) => `${k}=${v}`)
         .join(', ');
 
-      const clampedHeight = Math.min(250, Math.max(15, Math.round(analysis.boundingBoxMm.z)));
+      const clampedHeight = Math.min(250, Math.max(2, Math.round(analysis.boundingBoxMm.z)));
 
       const updatedJob: GenerationJobDocument = {
         ...activeJob,
@@ -498,14 +512,43 @@ export const useForgeStore = create<ForgeState>((set, get) => ({
     }
   },
 
-  generateScadFromPrompt: async (prompt: string, uid: string) => {
+  generateScadFromPrompt: async (prompt: string, uid: string, modifyCurrent = false) => {
     const cleanPrompt = prompt.trim();
     if (cleanPrompt.length < 3) {
       set({ errorBanner: 'Skriv inn en beskrivelse på minst 3 tegn for å generere .SCAD-fil.' });
       return;
     }
 
-    set({ isGenerating: true, isCompilingScad: true, errorBanner: null, lastCreatedOrder: null });
+    const shouldModify =
+      modifyCurrent ||
+      (Boolean(get().scadSource) &&
+        /\b(?:endre|gjør|bytt|sett|tilpass|større|mindre|tykkere|bredere|høyere|graver)/i.test(
+          cleanPrompt
+        ));
+
+    let currentSource = shouldModify ? (get().scadSource ?? undefined) : undefined;
+    if (currentSource) {
+      const { scadParameters, scadValues } = get();
+      for (const param of scadParameters) {
+        const val = scadValues[param.name];
+        if (val === undefined) continue;
+        if (param.type === 'string') {
+          const safeStr = String(val).replace(/["\\]/g, '').slice(0, param.maxLength || 20);
+          const strRegex = new RegExp(`(^\\s*${param.name}\\s*=\\s*)"[^"]*"`, 'm');
+          currentSource = currentSource.replace(strRegex, `$1"${safeStr}"`);
+        } else if (val !== param.defaultValue) {
+          const assignRegex = new RegExp(`(^\\s*${param.name}\\s*=\\s*)(-?\\d+(?:\\.\\d+)?)`, 'm');
+          currentSource = currentSource.replace(assignRegex, `$1${val}`);
+        }
+      }
+    }
+    set({
+      isGenerating: true,
+      isCompilingScad: true,
+      errorBanner: null,
+      lastCreatedOrder: null,
+      lastAiActionSummary: null,
+    });
 
     try {
       const res = await fetch('/api/parametric/scad/generate', {
@@ -514,6 +557,7 @@ export const useForgeStore = create<ForgeState>((set, get) => ({
         body: JSON.stringify({
           prompt: cleanPrompt,
           modelTier: get().scadAiModelTier,
+          ...(currentSource ? { baseScadSource: currentSource } : {}),
         }),
       });
 
@@ -550,6 +594,7 @@ export const useForgeStore = create<ForgeState>((set, get) => ({
         isGenerating: false,
         isCompilingScad: false,
         lastScadAiModelUsed: data.usedModel ?? null,
+        lastAiActionSummary: `${modifyCurrent ? 'Endret aktiv .SCAD' : 'Genererte ny .SCAD'}: ${data.title || data.fileName} (${analysis.boundingBoxMm.x} × ${analysis.boundingBoxMm.y} × ${analysis.boundingBoxMm.z} mm)`,
       });
     } catch (error) {
       const message =
@@ -599,6 +644,7 @@ export const useForgeStore = create<ForgeState>((set, get) => ({
     })),
 
   setInfillPercent: (infillPercent) => set({ infillPercent }),
+  setQuantity: (quantity) => set({ quantity: Math.min(25, Math.max(1, Math.round(quantity))) }),
 
   setUserQuota: (freeGenerationsRemaining, aiCreditNok) =>
     set({ freeGenerationsRemaining, aiCreditNok }),
@@ -804,7 +850,15 @@ export const useForgeStore = create<ForgeState>((set, get) => ({
   },
 
   refreshSliceQuote: async (uid: string) => {
-    const { activeJob, targetHeightMm, material, colorHex, layerQuality, infillPercent } = get();
+    const {
+      activeJob,
+      targetHeightMm,
+      material,
+      colorHex,
+      layerQuality,
+      infillPercent,
+      quantity,
+    } = get();
     set({ isSlicing: true, errorBanner: null });
 
     try {
@@ -814,11 +868,20 @@ export const useForgeStore = create<ForgeState>((set, get) => ({
         body: JSON.stringify({
           uid,
           jobId: activeJob.id,
-          targetHeightMm: Math.min(250, Math.max(15, targetHeightMm)),
+          targetHeightMm: Math.min(
+            250,
+            Math.max(
+              2,
+              activeJob.parametricTemplateId || activeJob.scadSource
+                ? activeJob.boundingBoxMm.z
+                : targetHeightMm
+            )
+          ),
           material,
           colorHex,
           layerQuality,
           infillPercent,
+          quantity,
           ...(activeJob.parametricTemplateId || activeJob.scadSource
             ? {
                 overrideBoundingBoxMm: activeJob.boundingBoxMm,

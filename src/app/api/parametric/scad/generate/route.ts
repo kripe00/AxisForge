@@ -2,10 +2,12 @@ import { NextResponse } from 'next/server';
 import { createOpenSCAD } from 'openscad-wasm';
 import { z } from 'zod';
 import { ScadAiGeneratorService } from '@/lib/services/scad-ai.service';
+import { mountOpenScadStdlib, sanitizeAndValidateScad } from '@/lib/three/openscad-stdlib';
 
 const GenerateScadRequestSchema = z.object({
   prompt: z.string().min(3, 'Beskriv hva slags 3D-del du vil generere').max(2000),
   modelTier: z.enum(['flash', 'pro']).default('flash'),
+  baseScadSource: z.string().max(500_000).optional(),
 });
 
 async function compileScadToStlBase64(scadSource: string): Promise<{
@@ -16,14 +18,17 @@ async function compileScadToStlBase64(scadSource: string): Promise<{
   const scad = await createOpenSCAD({
     print: () => undefined,
     printErr: (text: string) => {
-      if (text.toLowerCase().includes('error')) {
+      const lower = text.toLowerCase();
+      if (lower.includes('error') || lower.includes('warning') || lower.includes('empty')) {
         stderrLines.push(text);
       }
     },
   });
 
+  const cleanSource = sanitizeAndValidateScad(scadSource);
   const instance = scad.getInstance();
-  instance.FS.writeFile('/input.scad', scadSource);
+  mountOpenScadStdlib(instance.FS);
+  instance.FS.writeFile('/input.scad', cleanSource);
 
   const exitCode = instance.callMain([
     '--backend=Manifold',
@@ -61,16 +66,34 @@ export async function POST(request: Request) {
       );
     }
 
-    const { prompt, modelTier } = parsed.data;
-    let generated = await ScadAiGeneratorService.generateScadFromPrompt(prompt, modelTier);
+    const { prompt, modelTier, baseScadSource } = parsed.data;
+    let generated = await ScadAiGeneratorService.generateScadFromPrompt(
+      prompt,
+      modelTier,
+      baseScadSource
+    );
     let compiled: { stlBase64: string; byteLength: number };
 
     try {
       compiled = await compileScadToStlBase64(generated.scadSource);
-    } catch {
-      // Self-heal if an external LLM returned invalid OpenSCAD syntax
-      generated = ScadAiGeneratorService.synthesizeFallback(prompt);
-      compiled = await compileScadToStlBase64(generated.scadSource);
+    } catch (firstErr) {
+      const errMsg = firstErr instanceof Error ? firstErr.message : String(firstErr);
+      let repaired: typeof generated | null = null;
+      if (generated.provider === 'gemini') {
+        repaired = await ScadAiGeneratorService.repairScadWithGemini(generated, errMsg, prompt);
+      }
+      if (repaired) {
+        try {
+          compiled = await compileScadToStlBase64(repaired.scadSource);
+          generated = repaired;
+        } catch {
+          generated = ScadAiGeneratorService.synthesizeFallback(prompt, baseScadSource);
+          compiled = await compileScadToStlBase64(generated.scadSource);
+        }
+      } else {
+        generated = ScadAiGeneratorService.synthesizeFallback(prompt, baseScadSource);
+        compiled = await compileScadToStlBase64(generated.scadSource);
+      }
     }
 
     return NextResponse.json(

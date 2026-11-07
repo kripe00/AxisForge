@@ -1,7 +1,5 @@
 import { initializeApp, getApps, getApp, type FirebaseApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, type Auth } from 'firebase/auth';
-import { getFirestore, type Firestore } from 'firebase/firestore';
-import { getStorage, type FirebaseStorage } from 'firebase/storage';
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || 'demo-axisforge-api-key',
@@ -23,14 +21,10 @@ export const isDevMockMode = (): boolean => {
 
 let firebaseApp: FirebaseApp | null = null;
 let firebaseAuth: Auth | null = null;
-let firestoreDb: Firestore | null = null;
-let firebaseStorage: FirebaseStorage | null = null;
 
 export function getFirebaseClient(): {
   app: FirebaseApp;
   auth: Auth;
-  db: Firestore;
-  storage: FirebaseStorage;
   googleProvider: GoogleAuthProvider;
 } {
   if (!firebaseApp) {
@@ -39,12 +33,6 @@ export function getFirebaseClient(): {
   if (!firebaseAuth) {
     firebaseAuth = getAuth(firebaseApp);
   }
-  if (!firestoreDb) {
-    firestoreDb = getFirestore(firebaseApp);
-  }
-  if (!firebaseStorage) {
-    firebaseStorage = getStorage(firebaseApp);
-  }
 
   const googleProvider = new GoogleAuthProvider();
   googleProvider.setCustomParameters({ prompt: 'select_account' });
@@ -52,8 +40,6 @@ export function getFirebaseClient(): {
   return {
     app: firebaseApp,
     auth: firebaseAuth,
-    db: firestoreDb,
-    storage: firebaseStorage,
     googleProvider,
   };
 }

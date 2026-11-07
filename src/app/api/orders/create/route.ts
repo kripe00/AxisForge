@@ -98,6 +98,7 @@ export async function POST(request: Request) {
         colorHex: quote.colorHex,
         layerQuality: quote.layerQuality,
         layerHeightMm: quote.layerHeightMm,
+        quantity: quote.quantity ?? 1,
         filamentGrams: quote.filamentGrams,
         supportGrams: quote.supportGrams,
         printTimeSeconds: quote.printTimeSeconds,

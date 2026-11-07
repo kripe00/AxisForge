@@ -168,7 +168,10 @@ export const ScadParameterDefSchema = z.object({
   name: z.string().min(1),
   label: z.string().min(1),
   group: z.string().default('Parametere'),
-  defaultValue: z.number(),
+  type: z.enum(['number', 'string']).optional(),
+  defaultValue: z.number().default(0),
+  defaultString: z.string().optional(),
+  maxLength: z.number().int().positive().optional(),
   min: z.number(),
   max: z.number(),
   step: z.number().positive(),
@@ -278,6 +281,10 @@ export const PricingBreakdownSchema = z.object({
   finalPriceNok: z.number().positive(),
   shippingNok: z.number().nonnegative(),
   timeMultiplier: z.number().positive(),
+  quantity: z.number().int().min(1).optional().default(1),
+  unitPriceNok: z.number().positive().optional(),
+  batchSavingsNok: z.number().nonnegative().optional().default(0),
+  platesRequired: z.number().int().min(1).optional().default(1),
 });
 
 export type PricingBreakdown = z.infer<typeof PricingBreakdownSchema>;
@@ -293,6 +300,7 @@ export const SliceQuoteDocumentSchema = z.object({
   layerQuality: LayerQualityKeySchema,
   layerHeightMm: LayerHeightMmSchema,
   infillPercent: z.number().int().min(10).max(100).default(15),
+  quantity: z.number().int().min(1).max(25).optional().default(1),
   filamentGrams: z.number().positive(),
   supportGrams: z.number().nonnegative(),
   printTimeSeconds: z.number().int().positive(),
@@ -348,6 +356,7 @@ export const ImmutableQuoteSnapshotSchema = z.object({
   colorHex: z.string(),
   layerQuality: LayerQualityKeySchema,
   layerHeightMm: LayerHeightMmSchema,
+  quantity: z.number().int().min(1).max(25).optional().default(1),
   filamentGrams: z.number(),
   supportGrams: z.number(),
   printTimeSeconds: z.number(),
@@ -395,12 +404,13 @@ export const SliceQuoteRequestSchema = z.object({
   jobId: z.string().min(1),
   targetHeightMm: z
     .number()
-    .min(15, 'Minimum høyde er 15 mm')
+    .min(2, 'Minimum høyde er 2 mm')
     .max(250, 'Maksimum høyde på Bambu X1C er 250 mm (256 mm plate)'),
   material: FilamentMaterialCodeSchema,
   colorHex: z.string().regex(/^#[0-9A-Fa-f]{6}$/),
   layerQuality: LayerQualityKeySchema,
   infillPercent: z.number().int().min(10).max(100).default(15),
+  quantity: z.number().int().min(1).max(25).optional().default(1),
   overrideBoundingBoxMm: DimensionsMmSchema.optional(),
   overrideVolumeCm3: z.number().positive().optional(),
   overrideOverhangRatio: z.number().min(0).max(1).optional(),

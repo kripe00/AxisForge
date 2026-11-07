@@ -15,6 +15,7 @@ import {
   ORDER_BONUS_GENERATIONS,
 } from '@/lib/services/pricing.engine';
 import { parseScadParameters, SAMPLE_OPENSCAD_FILE_CONTENT } from '@/lib/three/scad-parser';
+import { SCAD_LIBRARY_TEMPLATES } from '@/lib/three/scad-templates';
 
 // ============================================================================
 // SERVER-AUTHORITATIVE FIREBASE ADMIN SDK + DEV-MOCK PERSISTENT MEMORY STORE
@@ -49,8 +50,32 @@ function createInitialDevDatabase(): DevMemoryDatabase {
 
   const sampleScadParams = parseScadParameters(SAMPLE_OPENSCAD_FILE_CONTENT);
 
+  const scadTemplateCatalogDocs: CatalogModelDocument[] = SCAD_LIBRARY_TEMPLATES.map((tpl) => ({
+    id: tpl.id,
+    title: `${tpl.title} (.SCAD)`,
+    description: tpl.description,
+    category: tpl.category,
+    fileName: tpl.fileName,
+    fileFormat: 'scad',
+    fileStoragePath: `catalog/${tpl.id}/${tpl.fileName}`,
+    modelFileUrl: null,
+    stlBase64: null,
+    scadSource: tpl.scadSource,
+    scadParameters: parseScadParameters(tpl.scadSource),
+    proceduralPreset: tpl.proceduralPreset,
+    parametricTemplateId: null,
+    parametricParams: null,
+    boundingBoxMm: tpl.boundingBoxMm,
+    volumeCm3: tpl.volumeCm3,
+    overhangRatio: tpl.overhangRatio,
+    defaultMaterial: tpl.defaultMaterial,
+    defaultColorHex: tpl.defaultColorHex,
+    createdAt: now,
+  }));
+
   // Seeded Curated STL / 3MF / SCAD Catalog Models
   const seedCatalog: CatalogModelDocument[] = [
+    ...scadTemplateCatalogDocs,
     {
       id: 'cat_scad_flange_mount',
       title: 'Parametrisk Rør- og Monteringsflens (.SCAD)',
@@ -207,6 +232,7 @@ function createInitialDevDatabase(): DevMemoryDatabase {
     layerQuality: '0.20mm',
     layerHeightMm: 0.2,
     infillPercent: 15,
+    quantity: 1,
     filamentGrams: 135,
     supportGrams: 16.2,
     printTimeSeconds: 9900,
@@ -224,6 +250,10 @@ function createInitialDevDatabase(): DevMemoryDatabase {
       finalPriceNok: 349,
       shippingNok: 79,
       timeMultiplier: 1.0,
+      quantity: 1,
+      unitPriceNok: 349,
+      batchSavingsNok: 0,
+      platesRequired: 1,
     },
     sliced3mfStoragePath: 'slices/dev-operator-01/quote_seed_x1c_01/plate_1.3mf',
     expiresAt: expires,
@@ -247,6 +277,7 @@ function createInitialDevDatabase(): DevMemoryDatabase {
       colorHex: defaultQuote.colorHex,
       layerQuality: defaultQuote.layerQuality,
       layerHeightMm: defaultQuote.layerHeightMm,
+      quantity: 1,
       filamentGrams: defaultQuote.filamentGrams,
       supportGrams: defaultQuote.supportGrams,
       printTimeSeconds: defaultQuote.printTimeSeconds,
@@ -316,7 +347,7 @@ export function getDevDatabase(): DevMemoryDatabase {
     globalForForgeAdmin.__axisForgeDevDb = createInitialDevDatabase();
   } else if (
     !globalForForgeAdmin.__axisForgeDevDb.catalog_models ||
-    !globalForForgeAdmin.__axisForgeDevDb.catalog_models.has('cat_scad_flange_mount')
+    !globalForForgeAdmin.__axisForgeDevDb.catalog_models.has('cat_scad_gridfinity_bin')
   ) {
     const fresh = createInitialDevDatabase();
     fresh.catalog_models.forEach((val, key) => {

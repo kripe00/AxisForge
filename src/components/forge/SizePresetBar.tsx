@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Ruler } from 'lucide-react';
+import { Lock, Ruler } from 'lucide-react';
 import { useForgeStore } from '@/store/useForgeStore';
 
 const SIZE_PRESETS = [
@@ -26,8 +26,28 @@ const SIZE_PRESETS = [
 ] as const;
 
 export function SizePresetBar() {
-  const { targetHeightMm, setTargetHeightMm, getComputedDimensionsMm } = useForgeStore();
+  const { activeJob, targetHeightMm, setTargetHeightMm, getComputedDimensionsMm } = useForgeStore();
   const liveDims = getComputedDimensionsMm();
+  const isParametric = Boolean(activeJob.parametricTemplateId || activeJob.scadSource);
+
+  if (isParametric) {
+    return (
+      <section
+        aria-label="1:1 Eksakte CAD-mål"
+        className="rounded-2xl border border-zinc-200/90 bg-white p-4 shadow-nordic"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="inline-flex items-center gap-1.5 font-mono text-xs font-semibold text-emerald-800">
+            <Lock className="h-3.5 w-3.5 text-emerald-600" />
+            1:1 Eksakte CAD-mål aktivert
+          </span>
+          <span className="rounded-lg bg-zinc-900 px-2.5 py-1 font-mono text-xs font-semibold text-white">
+            {liveDims.x} × {liveDims.y} × {liveDims.z} mm
+          </span>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section

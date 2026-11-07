@@ -13,12 +13,17 @@ import {
   FileBox,
   FileCode2,
   ImagePlus,
+  Layers,
+  Lock,
   PlusCircle,
   RefreshCw,
   Ruler,
+  Share2,
   Sliders,
   Sparkles,
+  Type,
   Upload,
+  Wand2,
 } from 'lucide-react';
 import {
   LAYER_QUALITY,
@@ -33,6 +38,7 @@ import {
   PARAMETRIC_TEMPLATES,
 } from '@/lib/three/parametric-engine';
 import { SAMPLE_OPENSCAD_FILE_CONTENT } from '@/lib/three/scad-parser';
+import { SCAD_LIBRARY_TEMPLATES, type ScadLibraryCategory } from '@/lib/three/scad-templates';
 import { useForgeStore } from '@/store/useForgeStore';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { SpecSheetCard } from '@/components/forge/SpecSheetCard';
@@ -58,22 +64,100 @@ const PROMPT_PRESETS = [
 
 const SCAD_AI_PRESETS = [
   {
-    label: 'Vinkelbrakett 80×65 mm (M5)',
-    prompt: 'Forsterket vinkelbrakett 80x65x42 mm med avstivningsribber og M5 skruehull',
+    label: 'Gridfinity 3×4 verktøy (8H)',
+    prompt: 'Gridfinity oppbevaringsboks 3x4 ruter og 8 enheter høy med magnethull',
   },
   {
-    label: 'Tannhjul 24T (Ø8 aksel)',
-    prompt: 'Parametrisk tannhjul med 24 tenner, 12 mm tykkelse og 8 mm senterhull',
+    label: 'Rugged Box XL 165×115 mm',
+    prompt: 'Vanntett Rugged Box verktøykasse 165x115x65 mm med 4mm vegg og pakningsspor',
   },
   {
-    label: 'Rørklemme Ø32 mm',
-    prompt: 'Rørklemme med diameter 32 mm, 24 mm bredde og festeører med M4 hull',
+    label: 'Navneskilt "VERKSTED"',
+    prompt: 'Parametrisk navneskilt med teksten "VERKSTED" og 16 mm bokstavhøyde',
   },
   {
-    label: 'Boks 120×80×45 mm',
-    prompt: 'Oppbevaringsboks 120x80x45 mm med 3 mm veggtykkelse og skillevegger',
+    label: 'Signetring Ø21 mm "KONGEN"',
+    prompt: 'Parametrisk signetring med indre diameter 21 mm, 12 mm bredde og gravering "KONGEN"',
+  },
+  {
+    label: 'Skrulokk-krukke Ø95×90 mm',
+    prompt: 'Skrulokk-krukke med diameter 95 mm og høyde 90 mm med riflet lokk',
+  },
+  {
+    label: 'Bølge-vase XL Ø130×200 mm',
+    prompt: 'Parametrisk bølge-vase med diameter 130 mm og høyde 200 mm',
   },
 ] as const;
+
+const SCAD_AI_MODIFY_PRESETS = [
+  {
+    label: '+3 rom / skillevegger',
+    prompt: 'Legg til 3 rom innvendig og sett bredde til 140 mm',
+  },
+  {
+    label: 'Gjør større (160×110×65 mm)',
+    prompt: 'Sett bredde til 160 mm, dybde til 110 mm og høyde til 65 mm',
+  },
+  {
+    label: 'Forsterkede vegger (4.2 mm)',
+    prompt: 'Sett ekstra tykk veggtykkelse til 4.2 mm for høy styrke',
+  },
+  {
+    label: 'Graver "AXIS" i 3D',
+    prompt: 'Graver teksten "AXIS" i modellen',
+  },
+] as const;
+
+const SCAD_COOKIE_CUTTER_MODIFY_PRESETS = [
+  {
+    label: '⚡ Endre til Pikachu',
+    prompt: 'Endre til pikachu',
+  },
+  {
+    label: '🐱 Endre til Katt',
+    prompt: 'Endre det til en katt',
+  },
+  {
+    label: '❤️ Endre til Hjerte',
+    prompt: 'Endre det til et hjerte',
+  },
+  {
+    label: '🎄 Endre til Juletre',
+    prompt: 'Endre det til et juletre',
+  },
+  {
+    label: '🍪 Pepperkakemann',
+    prompt: 'Endre det til en pepperkakemann',
+  },
+  {
+    label: '🐶 Endre til Hund',
+    prompt: 'Endre det til en hund',
+  },
+  {
+    label: '🦖 Endre til Dinosaur',
+    prompt: 'Endre det til en dinosaur',
+  },
+  {
+    label: '🦇 Flaggermus / Batman',
+    prompt: 'Endre til flaggermus',
+  },
+  {
+    label: '🍄 Super Mario Sopp',
+    prompt: 'Endre til sopp',
+  },
+  {
+    label: '🦄 Enhjørning',
+    prompt: 'Endre til enhjørning',
+  },
+] as const;
+
+const SCAD_CATEGORY_TABS: ('Alle' | ScadLibraryCategory)[] = [
+  'Alle',
+  'Bokser & Organisering',
+  'Former & Verktøy',
+  'Smykker & Mote',
+  'Pynt & Interiør',
+];
 
 const SIZE_PRESETS = [
   {
@@ -147,6 +231,8 @@ export function PromptPanel() {
     scadValues,
     isCompilingScad,
     scadAiModelTier,
+    lastScadAiModelUsed,
+    lastAiActionSummary,
     setScadAiModelTier,
     loadScadFile,
     setScadParamValue,
@@ -163,6 +249,7 @@ export function PromptPanel() {
     colorHex,
     layerQuality,
     infillPercent,
+    quantity,
     isGenerating,
     isBuyingCredits,
     setPromptInput,
@@ -172,6 +259,7 @@ export function PromptPanel() {
     setColorHex,
     setLayerQuality,
     setInfillPercent,
+    setQuantity,
     generateModelFromPrompt,
     buyExtraAiGenerations,
     refreshSliceQuote,
@@ -179,18 +267,98 @@ export function PromptPanel() {
   } = useForgeStore();
 
   const [aiOutputFormat, setAiOutputFormat] = useState<'scad' | 'mesh'>('scad');
-  const [scadAiPrompt, setScadAiPrompt] = useState(
-    'Forsterket vinkelbrakett 85x65x40 mm med avstivningsribber og M5 skruehull'
+  const [selectedScadCategory, setSelectedScadCategory] = useState<'Alle' | ScadLibraryCategory>(
+    'Alle'
   );
+  const [scadAiPrompt, setScadAiPrompt] = useState(
+    'Legg til 3 rom innvendig og sett dybde til 110 mm'
+  );
+  const [copiedShareUrl, setCopiedShareUrl] = useState(false);
+  const didHydrateUrlRef = useRef(false);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scadCompileTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const currentMaterialSpec = MATERIALS[material];
   const liveDims = getComputedDimensionsMm();
   const activeParametricSpec = PARAMETRIC_TEMPLATES[parametricTemplateId];
+  const isCookieCutterActive =
+    scadFileName === 'parametric_cookie_cutter.scad' ||
+    Boolean(scadSource && scadSource.includes('CUTTER_HEIGHT_MM'));
+  const activeModifyPresets = isCookieCutterActive
+    ? SCAD_COOKIE_CUTTER_MODIFY_PRESETS
+    : SCAD_AI_MODIFY_PRESETS;
+
+  useEffect(() => {
+    if (scadFileName === 'parametric_cookie_cutter.scad') {
+      setScadAiPrompt('Endre det til en katt');
+    } else if (scadFileName === 'parametric_signet_ring.scad') {
+      setScadAiPrompt('Sett diameter til 21 mm og graver teksten "KONGEN"');
+    } else if (scadFileName === 'custom_3d_nameplate.scad') {
+      setScadAiPrompt('Graver teksten "VERKSTED" og sett bokstavhøyde til 18 mm');
+    }
+  }, [scadFileName]);
 
   useEffect(() => {
     void fetchCatalogModels();
   }, [fetchCatalogModels]);
+
+  // Hydrate shared parametric setup from URL query parameters (?model=...)
+  useEffect(() => {
+    if (didHydrateUrlRef.current || typeof window === 'undefined') return;
+    didHydrateUrlRef.current = true;
+
+    const params = new URLSearchParams(window.location.search);
+    const modelParam = params.get('model');
+    if (!modelParam) return;
+
+    const matchedTpl = SCAD_LIBRARY_TEMPLATES.find(
+      (t) => t.id === modelParam || t.fileName === modelParam
+    );
+    if (!matchedTpl) return;
+
+    const qtyParam = Number(params.get('qty'));
+    if (Number.isFinite(qtyParam) && qtyParam >= 1 && qtyParam <= 25) {
+      setQuantity(Math.round(qtyParam));
+    }
+
+    const matParam = params.get('mat') as FilamentMaterialCode | null;
+    if (matParam && matParam in MATERIALS) {
+      setMaterial(matParam);
+    }
+
+    const colParam = params.get('col');
+    if (colParam && /^#[0-9A-Fa-f]{6}$/.test(colParam)) {
+      setColorHex(colParam);
+    }
+
+    void (async () => {
+      setStep1Mode('parametric', uid);
+      await loadScadFile(matchedTpl.fileName, matchedTpl.scadSource, uid, matchedTpl.title);
+      let hasCustomParam = false;
+      params.forEach((val, key) => {
+        if (['model', 'qty', 'mat', 'col'].includes(key)) return;
+        const numVal = Number(val);
+        if (val !== '' && Number.isFinite(numVal) && !key.includes('TEXT')) {
+          setScadParamValue(key, numVal);
+          hasCustomParam = true;
+        } else if (val) {
+          setScadParamValue(key, val);
+          hasCustomParam = true;
+        }
+      });
+      if (hasCustomParam) {
+        await compileActiveScad(uid, true);
+      }
+    })();
+  }, [
+    compileActiveScad,
+    loadScadFile,
+    setColorHex,
+    setMaterial,
+    setQuantity,
+    setScadParamValue,
+    setStep1Mode,
+    uid,
+  ]);
 
   useEffect(() => {
     if (debounceTimerRef.current) {
@@ -211,20 +379,48 @@ export function PromptPanel() {
     colorHex,
     layerQuality,
     infillPercent,
+    quantity,
     parametricTemplateId,
     parametricParams,
     uid,
     refreshSliceQuote,
   ]);
 
-  const handleScadParamChange = (paramName: string, nextValue: number) => {
+  const handleScadParamChange = (paramName: string, nextValue: number | string) => {
     setScadParamValue(paramName, nextValue);
     if (scadCompileTimerRef.current) {
       clearTimeout(scadCompileTimerRef.current);
     }
     scadCompileTimerRef.current = setTimeout(() => {
-      void compileActiveScad(uid);
+      void compileActiveScad(uid, true);
     }, 380);
+  };
+
+  const handleShareParametricUrl = async () => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams();
+    const matchedTpl = SCAD_LIBRARY_TEMPLATES.find((t) => t.fileName === scadFileName);
+    params.set('model', matchedTpl ? matchedTpl.id : scadFileName || 'custom');
+    params.set('mat', material);
+    params.set('col', colorHex);
+    if (quantity > 1) {
+      params.set('qty', String(quantity));
+    }
+    for (const param of scadParameters) {
+      const val = scadValues[param.name];
+      if (val !== undefined) {
+        params.set(param.name, String(val));
+      }
+    }
+    const shareUrl = `${window.location.origin}${window.location.pathname}?${params.toString()}`;
+    window.history.replaceState({}, '', `?${params.toString()}`);
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setCopiedShareUrl(true);
+      setTimeout(() => setCopiedShareUrl(false), 2500);
+    } catch {
+      // Fallback if clipboard is unavailable
+    }
   };
 
   const handleScadFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -264,11 +460,16 @@ export function PromptPanel() {
   const handleDownloadScadSource = () => {
     if (!scadSource) return;
 
-    // Bake current slider values into the exported .scad file so downloaded .scad has updated defaults
+    // Bake current slider & text values into the exported .scad file so downloaded .scad has updated defaults
     let updatedScad = scadSource;
     for (const param of scadParameters) {
       const val = scadValues[param.name];
-      if (val !== undefined && val !== param.defaultValue) {
+      if (val === undefined) continue;
+      if (param.type === 'string') {
+        const safeStr = String(val).replace(/["\\]/g, '').slice(0, param.maxLength || 20);
+        const strRegex = new RegExp(`(^\\s*${param.name}\\s*=\\s*)"[^"]*"`, 'm');
+        updatedScad = updatedScad.replace(strRegex, `$1"${safeStr}"`);
+      } else if (val !== param.defaultValue) {
         const assignRegex = new RegExp(`(^\\s*${param.name}\\s*=\\s*)(-?\\d+(?:\\.\\d+)?)`, 'm');
         updatedScad = updatedScad.replace(assignRegex, `$1${val}`);
       }
@@ -287,13 +488,20 @@ export function PromptPanel() {
     URL.revokeObjectURL(url);
   };
 
-  const handleDownloadParametricStl = () => {
+  const handleDownloadParametricStl = async () => {
     let stlBuffer: ArrayBuffer;
     let downloadName = `axisforge_${parametricTemplateId.toLowerCase()}.stl`;
 
-    if (parametricMode === 'scad' && activeJob.stlBase64) {
-      stlBuffer = base64ToArrayBuffer(activeJob.stlBase64);
-      downloadName = (scadFileName || 'openscad_model').replace(/\.scad$/i, '') + '.stl';
+    if (parametricMode === 'scad') {
+      // Compile at full production resolution ($fn=48+) before exporting STL
+      await compileActiveScad(uid, false);
+      const latestStlBase64 = useForgeStore.getState().activeJob.stlBase64 || activeJob.stlBase64;
+      if (latestStlBase64) {
+        stlBuffer = base64ToArrayBuffer(latestStlBase64);
+        downloadName = (scadFileName || 'openscad_model').replace(/\.scad$/i, '') + '.stl';
+      } else {
+        stlBuffer = exportParametricModelToStlBuffer(parametricTemplateId, parametricParams);
+      }
     } else {
       stlBuffer = exportParametricModelToStlBuffer(parametricTemplateId, parametricParams);
     }
@@ -391,13 +599,36 @@ export function PromptPanel() {
                 </Link>
               </div>
 
+              {/* Category filter bar for Catalog */}
+              <div className="flex flex-wrap gap-1.5">
+                {SCAD_CATEGORY_TABS.map((cat) => (
+                  <button
+                    key={cat}
+                    type="button"
+                    onClick={() => setSelectedScadCategory(cat)}
+                    className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                      selectedScadCategory === cat
+                        ? 'bg-zinc-900 text-white'
+                        : 'bg-[#F6F6F3] text-zinc-600 hover:bg-zinc-200/70 hover:text-zinc-900'
+                    }`}
+                  >
+                    {cat}
+                  </button>
+                ))}
+              </div>
+
               {isLoadingCatalog ? (
                 <div className="rounded-xl border border-zinc-200/80 bg-[#F6F6F3] p-8 text-center font-mono text-xs text-zinc-500">
                   Laster katalogmodeller...
                 </div>
               ) : (
                 <div className="space-y-2.5">
-                  {catalogModels.map((item) => {
+                  {catalogModels
+                    .filter(
+                      (item) =>
+                        selectedScadCategory === 'Alle' || item.category === selectedScadCategory
+                    )
+                    .map((item) => {
                     const isSelected = activeJob.id === `job_${item.id}`;
                     const isScad = item.fileFormat === 'scad' || Boolean(item.scadSource);
                     return (
@@ -513,7 +744,7 @@ export function PromptPanel() {
                    OPENSCAD (.SCAD) PARAMETRIC AI GENERATOR + FILE UPLOADER
                    ============================================================= */
                 <div className="space-y-4">
-                  {/* AI Text-to-OpenSCAD (.scad) Generator Box */}
+                  {/* AI Text-to-OpenSCAD (.scad) Generator & Contextual Code Fixer Box */}
                   <div className="rounded-xl border border-zinc-200/90 bg-[#F6F6F3]/80 p-3.5 shadow-nordic-sm">
                     <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2">
                       <label
@@ -521,7 +752,7 @@ export function PromptPanel() {
                         className="flex items-center gap-1.5 text-xs font-bold text-zinc-900"
                       >
                         <Sparkles className="h-3.5 w-3.5 text-[#FF4F00]" />
-                        <span>Generer parametrisk .SCAD-fil med AI</span>
+                        <span>AI Kode-fikser & .SCAD-generator (BOSL2)</span>
                       </label>
 
                       {/* Model Selector: Gemini 3.8 Flash vs Gemini 3.1 Pro */}
@@ -551,7 +782,7 @@ export function PromptPanel() {
                       </div>
                     </div>
 
-                    <div className="flex flex-col gap-2 sm:flex-row">
+                    <div className="space-y-2">
                       <input
                         id="scad-ai-prompt-input"
                         name="scadAiPrompt"
@@ -561,41 +792,388 @@ export function PromptPanel() {
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') {
                             e.preventDefault();
-                            void generateScadFromPrompt(scadAiPrompt, uid);
+                            void generateScadFromPrompt(scadAiPrompt, uid, Boolean(scadSource));
                           }
                         }}
-                        placeholder="F.eks. Vinkelbrakett 80x65 mm med M5 skruehull..."
-                        className="min-h-[38px] flex-1 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs text-zinc-900 focus:border-zinc-400 focus:outline-none"
+                        placeholder="F.eks. 'Legg til 3 skillevegger og gravering SINDRE' eller 'Lag trakt Ø80mm'..."
+                        className="min-h-[38px] w-full rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs text-zinc-900 focus:border-zinc-400 focus:outline-none"
                       />
-                      <button
-                        type="button"
-                        disabled={isGenerating || isCompilingScad}
-                        onClick={() => void generateScadFromPrompt(scadAiPrompt, uid)}
-                        className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg bg-[#FF4F00] px-3.5 py-2 text-xs font-semibold text-white transition-colors hover:bg-[#e04600] disabled:opacity-50"
-                      >
-                        {isGenerating ? (
-                          <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                          <Sparkles className="h-3.5 w-3.5" />
-                        )}
-                        <span>{isGenerating ? 'Skriver .SCAD...' : 'Generer .SCAD'}</span>
-                      </button>
+
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                        <button
+                          type="button"
+                          disabled={isGenerating || isCompilingScad || !scadSource}
+                          onClick={() => void generateScadFromPrompt(scadAiPrompt, uid, true)}
+                          className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-zinc-900 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-[#FF4F00] disabled:opacity-50"
+                        >
+                          {isGenerating ? (
+                            <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Wand2 className="h-3.5 w-3.5 text-[#FF4F00]" />
+                          )}
+                          <span>Endre aktiv .SCAD med AI</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          disabled={isGenerating || isCompilingScad}
+                          onClick={() => void generateScadFromPrompt(scadAiPrompt, uid, false)}
+                          className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-[#FF4F00] px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-[#e04600] disabled:opacity-50"
+                        >
+                          {isGenerating ? (
+                            <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Sparkles className="h-3.5 w-3.5" />
+                          )}
+                          <span>Generer helt ny .SCAD</span>
+                        </button>
+                      </div>
                     </div>
 
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                      {SCAD_AI_PRESETS.map((preset) => (
+                    <div className="mt-2.5 space-y-2 border-t border-zinc-200/70 pt-2.5">
+                      <div>
+                        <span className="mb-1 block font-mono text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+                          Hurtig-endringer på aktiv modell (AI Kode-fikser):
+                        </span>
+                        <div className="flex flex-wrap gap-1.5">
+                          {activeModifyPresets.map((preset) => (
+                            <button
+                              key={preset.label}
+                              type="button"
+                              disabled={isGenerating || isCompilingScad}
+                              onClick={() => {
+                                setScadAiPrompt(preset.prompt);
+                                void generateScadFromPrompt(preset.prompt, uid, true);
+                              }}
+                              className="rounded-lg border border-zinc-300 bg-zinc-900 px-2.5 py-1 text-[11px] font-medium text-white transition-colors hover:bg-[#FF4F00] disabled:opacity-50"
+                            >
+                              {preset.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div>
+                        <span className="mb-1 block font-mono text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+                          Eller generer ny ferdigtilpasset .SCAD-modell med ett klikk:
+                        </span>
+                        <div className="flex flex-wrap gap-1.5">
+                          {SCAD_AI_PRESETS.map((preset) => (
+                            <button
+                              key={preset.label}
+                              type="button"
+                              disabled={isGenerating || isCompilingScad}
+                              onClick={() => {
+                                setScadAiPrompt(preset.prompt);
+                                void generateScadFromPrompt(preset.prompt, uid, false);
+                              }}
+                              className="rounded-lg border border-zinc-200/90 bg-white px-2.5 py-1 text-[11px] font-medium text-zinc-700 transition-colors hover:border-[#FF4F00] hover:text-zinc-900 disabled:opacity-50"
+                            >
+                              {preset.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {lastAiActionSummary && (
+                        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-semibold text-emerald-900">
+                          <div className="flex items-center gap-1.5">
+                            <Check className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
+                            <span>{lastAiActionSummary}</span>
+                          </div>
+                          {lastScadAiModelUsed && (
+                            <span className="rounded bg-white/80 px-1.5 py-0.5 font-mono text-[10px] text-emerald-800">
+                              {lastScadAiModelUsed}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Status header + Share Setup Link */}
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-zinc-200/80 bg-[#F6F6F3]/70 px-3.5 py-2.5">
+                    <div className="flex flex-col gap-0.5">
+                      <div className="flex items-center gap-2">
+                        <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />
+                        <span className="font-mono text-xs font-bold text-zinc-900">
+                          {activeJob.prompt}
+                        </span>
+                      </div>
+                      <span className="pl-4 font-mono text-[11px] text-zinc-600">
+                        Mål: {liveDims.x} × {liveDims.y} × {liveDims.z} mm •{' '}
+                        {scadParameters.length} tilpassbare parametere
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => void handleShareParametricUrl()}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-zinc-800 hover:bg-zinc-100"
+                      >
+                        {copiedShareUrl ? (
+                          <>
+                            <Check className="h-3 w-3 text-emerald-600" />
+                            <span className="text-emerald-700">Lenke kopiert!</span>
+                          </>
+                        ) : (
+                          <>
+                            <Share2 className="h-3 w-3 text-[#FF4F00]" />
+                            <span>Del oppsett</span>
+                          </>
+                        )}
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={isCompilingScad}
+                        onClick={() => void compileActiveScad(uid, false)}
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-zinc-900 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-[#FF4F00] disabled:opacity-50"
+                      >
+                        <RefreshCw className={`h-3 w-3 ${isCompilingScad ? 'animate-spin' : ''}`} />
+                        <span>{isCompilingScad ? 'Kompilerer CSG...' : 'Full-res 3D'}</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Automatically Extracted & Grouped .SCAD Parameters (Sliders + Direct Number + 3D Text) */}
+                  <div className="space-y-4">
+                    {Array.from(new Set(scadParameters.map((p) => p.group || 'Standard'))).map(
+                      (groupName) => {
+                        const groupParams = scadParameters.filter(
+                          (p) => (p.group || 'Standard') === groupName
+                        );
+                        return (
+                          <div key={groupName} className="space-y-2.5">
+                            <div className="flex items-center justify-between px-1">
+                              <span className="font-mono text-[11px] font-bold uppercase tracking-wider text-zinc-500">
+                                [{groupName}]
+                              </span>
+                              <span className="font-mono text-[10px] text-zinc-400">
+                                {groupParams.length} valg
+                              </span>
+                            </div>
+
+                            {groupParams.map((param) => {
+                              const rawVal = scadValues[param.name];
+                              const inputId = `scad-param-${param.name}`;
+
+                              if (param.type === 'string') {
+                                const currentStr =
+                                  typeof rawVal === 'string'
+                                    ? rawVal
+                                    : (param.defaultString ?? 'AXIS');
+                                const maxLen = param.maxLength || 16;
+                                return (
+                                  <div
+                                    key={param.name}
+                                    className="rounded-xl border border-zinc-200/80 bg-white p-3.5 shadow-nordic-sm"
+                                  >
+                                    <div className="mb-2 flex items-center justify-between text-xs">
+                                      <div className="flex items-center gap-1.5">
+                                        <Type className="h-3.5 w-3.5 text-[#FF4F00]" />
+                                        <label
+                                          htmlFor={inputId}
+                                          className="font-semibold text-zinc-800"
+                                        >
+                                          {param.label}
+                                        </label>
+                                        <span className="font-mono text-[10px] text-zinc-400">
+                                          ({param.name})
+                                        </span>
+                                      </div>
+                                      <span className="rounded-md bg-[#FF4F00]/10 px-2 py-0.5 font-mono text-[10px] font-semibold text-[#FF4F00]">
+                                        3D-gravering ({currentStr.length}/{maxLen} tegn)
+                                      </span>
+                                    </div>
+
+                                    <input
+                                      id={inputId}
+                                      name={param.name}
+                                      type="text"
+                                      maxLength={maxLen}
+                                      value={currentStr}
+                                      placeholder="Skriv inn tekst for 3D-gravering..."
+                                      onChange={(e) =>
+                                        handleScadParamChange(
+                                          param.name,
+                                          e.target.value.toUpperCase()
+                                        )
+                                      }
+                                      className="min-h-[38px] w-full rounded-lg border border-zinc-200 bg-[#F6F6F3]/60 px-3 py-1.5 font-mono text-xs font-bold tracking-wider text-zinc-900 uppercase focus:border-zinc-400 focus:bg-white focus:outline-none"
+                                    />
+                                    <span className="mt-1 block font-mono text-[10px] text-zinc-400">
+                                      Støtter A–Å, 0–9, bindestrek og punktum (ekte 3D-vektor i
+                                      modellen)
+                                    </span>
+                                  </div>
+                                );
+                              }
+
+                              const currentNum =
+                                typeof rawVal === 'number' ? rawVal : param.defaultValue;
+
+                              return (
+                                <div
+                                  key={param.name}
+                                  className="rounded-xl border border-zinc-200/80 bg-white p-3.5 shadow-nordic-sm"
+                                >
+                                  <div className="mb-1.5 flex items-center justify-between gap-2 text-xs">
+                                    <div>
+                                      <label
+                                        htmlFor={inputId}
+                                        className="font-semibold text-zinc-800"
+                                      >
+                                        {param.label}
+                                      </label>
+                                      <span className="ml-2 font-mono text-[10px] text-zinc-400">
+                                        ({param.name})
+                                      </span>
+                                    </div>
+
+                                    {/* Direct numeric input alongside unit badge */}
+                                    <div className="inline-flex items-center gap-1 rounded-lg border border-zinc-200 bg-[#F6F6F3] px-2 py-0.5">
+                                      <input
+                                        type="number"
+                                        aria-label={`${param.label} i ${param.unit}`}
+                                        min={param.min}
+                                        max={param.max}
+                                        step={param.step}
+                                        value={currentNum}
+                                        onChange={(e) => {
+                                          const parsed = Number(e.target.value);
+                                          if (Number.isFinite(parsed)) {
+                                            handleScadParamChange(
+                                              param.name,
+                                              Math.min(param.max, Math.max(param.min, parsed))
+                                            );
+                                          }
+                                        }}
+                                        className="w-14 bg-transparent text-right font-mono text-xs font-bold text-zinc-900 focus:outline-none"
+                                      />
+                                      <span className="font-mono text-[10px] font-semibold text-zinc-500">
+                                        {param.unit}
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  <input
+                                    id={inputId}
+                                    name={param.name}
+                                    type="range"
+                                    min={param.min}
+                                    max={param.max}
+                                    step={param.step}
+                                    value={currentNum}
+                                    onChange={(e) =>
+                                      handleScadParamChange(param.name, Number(e.target.value))
+                                    }
+                                    className="h-1.5 w-full cursor-pointer appearance-none rounded-lg bg-zinc-200"
+                                  />
+
+                                  <div className="mt-1 flex items-center justify-between font-mono text-[10px] text-zinc-400">
+                                    <span>
+                                      Min: {param.min} {param.unit}
+                                    </span>
+                                    <span>
+                                      Maks: {param.max} {param.unit}
+                                    </span>
+                                  </div>
+
+                                  {param.options && param.options.length > 0 && (
+                                    <div className="mt-2 flex flex-wrap gap-1.5 border-t border-zinc-100 pt-2">
+                                      {param.options.map((opt) => {
+                                        const active = currentNum === opt.value;
+                                        return (
+                                          <button
+                                            key={opt.label}
+                                            type="button"
+                                            onClick={() =>
+                                              handleScadParamChange(param.name, opt.value)
+                                            }
+                                            className={`rounded-lg border px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                                              active
+                                                ? 'border-[#FF4F00] bg-[#FF4F00]/10 font-semibold text-[#FF4F00]'
+                                                : 'border-zinc-200 bg-[#F6F6F3] text-zinc-600 hover:bg-zinc-200/60'
+                                            }`}
+                                          >
+                                            {opt.label}
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      }
+                    )}
+                  </div>
+
+                  {/* Built-in Standardized OpenSCAD (.SCAD) Master Library */}
+                  <div className="rounded-xl border border-zinc-200/90 bg-white p-3.5 shadow-nordic-sm">
+                    <div className="mb-2 flex items-center justify-between">
+                      <span className="text-xs font-bold text-zinc-900">
+                        Bytt grunnmal ({SCAD_LIBRARY_TEMPLATES.length} stk med BOSL2)
+                      </span>
+                      <span className="font-mono text-[10px] text-zinc-500">
+                        Klikk for å laste inn annen mal
+                      </span>
+                    </div>
+
+                    <div className="mb-2.5 flex flex-wrap gap-1">
+                      {SCAD_CATEGORY_TABS.map((cat) => (
                         <button
-                          key={preset.label}
+                          key={cat}
                           type="button"
-                          onClick={() => {
-                            setScadAiPrompt(preset.prompt);
-                            void generateScadFromPrompt(preset.prompt, uid);
-                          }}
-                          className="rounded-lg border border-zinc-200/90 bg-white px-2.5 py-1 text-[11px] font-medium text-zinc-700 transition-colors hover:border-[#FF4F00] hover:text-zinc-900"
+                          onClick={() => setSelectedScadCategory(cat)}
+                          className={`rounded-md px-2 py-1 text-[10px] font-semibold transition-colors ${
+                            selectedScadCategory === cat
+                              ? 'bg-[#FF4F00] text-white'
+                              : 'bg-[#F6F6F3] text-zinc-600 hover:text-zinc-900'
+                          }`}
                         >
-                          {preset.label}
+                          {cat}
                         </button>
                       ))}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+                      {SCAD_LIBRARY_TEMPLATES.filter(
+                        (tpl) =>
+                          selectedScadCategory === 'Alle' || tpl.category === selectedScadCategory
+                      ).map((tpl) => {
+                        const isActive = scadFileName === tpl.fileName;
+                        return (
+                          <button
+                            key={tpl.id}
+                            type="button"
+                            onClick={() => {
+                              setMaterial(tpl.defaultMaterial);
+                              setColorHex(tpl.defaultColorHex);
+                              void loadScadFile(tpl.fileName, tpl.scadSource, uid, tpl.title);
+                            }}
+                            className={`flex flex-col items-start rounded-lg border px-2.5 py-2 text-left transition-all ${
+                              isActive
+                                ? 'border-zinc-900 bg-zinc-900 text-white shadow-nordic-sm'
+                                : 'border-zinc-200/80 bg-[#F6F6F3]/60 text-zinc-800 hover:border-[#FF4F00] hover:bg-white'
+                            }`}
+                          >
+                            <span className="line-clamp-1 text-[11px] font-bold">
+                              {tpl.shortTitle}
+                            </span>
+                            <span
+                              className={`mt-0.5 line-clamp-1 font-mono text-[9px] ${
+                                isActive ? 'text-zinc-300' : 'text-zinc-500'
+                              }`}
+                            >
+                              {tpl.category}
+                            </span>
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
 
@@ -626,98 +1204,6 @@ export function PromptPanel() {
                       onChange={(e) => void handleScadFileUpload(e)}
                       className="sr-only"
                     />
-                  </div>
-
-                  {/* Status header */}
-                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-zinc-200/80 bg-[#F6F6F3]/70 px-3.5 py-2.5">
-                    <div className="flex items-center gap-2">
-                      <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />
-                      <span className="font-mono text-xs font-semibold text-zinc-800">
-                        {scadParameters.length} tilpassbare parametere funnet i .scad-filen
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      disabled={isCompilingScad}
-                      onClick={() => void compileActiveScad(uid)}
-                      className="inline-flex items-center gap-1.5 rounded-lg bg-zinc-900 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-[#FF4F00] disabled:opacity-50"
-                    >
-                      <RefreshCw className={`h-3 w-3 ${isCompilingScad ? 'animate-spin' : ''}`} />
-                      <span>{isCompilingScad ? 'Kompilerer CSG...' : 'Oppdater 3D'}</span>
-                    </button>
-                  </div>
-
-                  {/* Automatically Extracted .SCAD Sliders */}
-                  <div className="space-y-3">
-                    {scadParameters.map((param) => {
-                      const currentVal = scadValues[param.name] ?? param.defaultValue;
-                      const inputId = `scad-param-${param.name}`;
-                      return (
-                        <div
-                          key={param.name}
-                          className="rounded-xl border border-zinc-200/80 bg-white p-3.5 shadow-nordic-sm"
-                        >
-                          <div className="mb-1.5 flex items-center justify-between text-xs">
-                            <div>
-                              <label htmlFor={inputId} className="font-semibold text-zinc-800">
-                                {param.label}
-                              </label>
-                              <span className="ml-2 font-mono text-[10px] text-zinc-400">
-                                ({param.name})
-                              </span>
-                            </div>
-                            <span className="rounded-md bg-zinc-900 px-2.5 py-0.5 font-mono text-xs font-bold text-white">
-                              {currentVal} {param.unit}
-                            </span>
-                          </div>
-
-                          <input
-                            id={inputId}
-                            name={param.name}
-                            type="range"
-                            min={param.min}
-                            max={param.max}
-                            step={param.step}
-                            value={currentVal}
-                            onChange={(e) =>
-                              handleScadParamChange(param.name, Number(e.target.value))
-                            }
-                            className="h-1.5 w-full cursor-pointer appearance-none rounded-lg bg-zinc-200"
-                          />
-
-                          <div className="mt-1 flex items-center justify-between font-mono text-[10px] text-zinc-400">
-                            <span>
-                              Min: {param.min} {param.unit}
-                            </span>
-                            <span>
-                              Maks: {param.max} {param.unit}
-                            </span>
-                          </div>
-
-                          {param.options && param.options.length > 0 && (
-                            <div className="mt-2 flex flex-wrap gap-1.5 border-t border-zinc-100 pt-2">
-                              {param.options.map((opt) => {
-                                const active = currentVal === opt.value;
-                                return (
-                                  <button
-                                    key={opt.label}
-                                    type="button"
-                                    onClick={() => handleScadParamChange(param.name, opt.value)}
-                                    className={`rounded-lg border px-2.5 py-1 text-[11px] font-medium transition-colors ${
-                                      active
-                                        ? 'border-[#FF4F00] bg-[#FF4F00]/10 font-semibold text-[#FF4F00]'
-                                        : 'border-zinc-200 bg-[#F6F6F3] text-zinc-600 hover:bg-zinc-200/60'
-                                    }`}
-                                  >
-                                    {opt.label}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
                   </div>
 
                   {/* Expandable OpenSCAD Source Code Inspector */}
@@ -1014,7 +1500,13 @@ export function PromptPanel() {
                       <button
                         key={preset.label}
                         type="button"
-                        onClick={() => setPromptInput(preset.prompt)}
+                        disabled={isGenerating}
+                        onClick={() => {
+                          setPromptInput(preset.prompt);
+                          if (aiOutputFormat === 'scad') {
+                            void generateScadFromPrompt(preset.prompt, uid, false);
+                          }
+                        }}
                         className={`rounded-xl border px-3 py-2.5 text-left text-xs font-medium transition-all ${
                           isCurrent
                             ? 'border-zinc-900 bg-zinc-900 text-white'
@@ -1153,14 +1645,20 @@ export function PromptPanel() {
             {activeJob.parametricTemplateId || activeJob.scadSource ? (
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#FF4F00]/30 bg-[#FF4F00]/5 p-4">
                 <div>
-                  <span className="block text-xs font-bold text-zinc-900">
-                    {activeJob.scadSource
-                      ? 'OpenSCAD (.scad) parametrisk modell'
-                      : 'Parametrisk modell med egendefinerte mål'}
-                  </span>
-                  <span className="mt-0.5 block font-mono text-[11px] text-zinc-600">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs font-bold text-zinc-900">
+                      {activeJob.scadSource
+                        ? 'OpenSCAD (.scad) parametrisk modell'
+                        : 'Parametrisk modell med egendefinerte mål'}
+                    </span>
+                    <span className="inline-flex items-center gap-1 rounded-md bg-emerald-500/15 px-2 py-0.5 font-mono text-[10px] font-semibold text-emerald-800">
+                      <Lock className="h-2.5 w-2.5" />
+                      1:1 Eksakte CAD-mål låst
+                    </span>
+                  </div>
+                  <span className="mt-1 block font-mono text-[11px] text-zinc-600">
                     Ytre mål: {liveDims.x} × {liveDims.y} × {liveDims.z} mm • Volum:{' '}
-                    {activeJob.volumeCm3} cm³
+                    {activeJob.volumeCm3} cm³ (Ingen uønsket skalering)
                   </span>
                 </div>
                 <button
@@ -1355,6 +1853,74 @@ export function PromptPanel() {
                   );
                 })}
               </div>
+            </fieldset>
+
+            {/* 4. QUANTITY & SHARED BUILD PLATE BATCH DISCOUNT */}
+            <fieldset className="rounded-xl border border-zinc-200/90 bg-[#F6F6F3]/60 p-4">
+              <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2">
+                <legend className="flex items-center gap-1.5 text-xs font-semibold text-zinc-900">
+                  <Layers className="h-3.5 w-3.5 text-[#FF4F00]" />
+                  <span>4. Antall eksemplarer (Samtrykksrabatt på felles byggeplate)</span>
+                </legend>
+                <span className="rounded-md bg-zinc-900 px-2.5 py-0.5 font-mono text-xs font-bold text-white">
+                  {activeQuote.pricingBreakdown.unitPriceNok ?? activeQuote.calculatedPriceNok}{' '}
+                  kr/stk
+                </span>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                {[1, 2, 4, 8, 10].map((presetQty) => {
+                  const isSelected = quantity === presetQty;
+                  return (
+                    <button
+                      key={presetQty}
+                      type="button"
+                      onClick={() => setQuantity(presetQty)}
+                      className={`rounded-xl border px-3 py-2 font-mono text-xs font-semibold transition-all ${
+                        isSelected
+                          ? 'border-zinc-900 bg-zinc-900 text-white shadow-nordic-sm'
+                          : 'border-zinc-200 bg-white text-zinc-700 hover:border-[#FF4F00]'
+                      }`}
+                    >
+                      {presetQty} stk
+                    </button>
+                  );
+                })}
+
+                <div className="ml-auto inline-flex items-center gap-1.5 rounded-xl border border-zinc-200 bg-white px-3 py-1.5">
+                  <label htmlFor="batch-quantity-input" className="text-[11px] text-zinc-500">
+                    Valgfritt (1–25):
+                  </label>
+                  <input
+                    id="batch-quantity-input"
+                    type="number"
+                    min={1}
+                    max={25}
+                    value={quantity}
+                    onChange={(e) => {
+                      const val = Number(e.target.value);
+                      if (Number.isFinite(val)) {
+                        setQuantity(Math.max(1, Math.min(25, Math.round(val))));
+                      }
+                    }}
+                    className="w-12 bg-transparent text-right font-mono text-xs font-bold text-zinc-900 focus:outline-none"
+                  />
+                  <span className="font-mono text-[11px] text-zinc-500">stk</span>
+                </div>
+              </div>
+
+              {quantity > 1 && (activeQuote.pricingBreakdown.batchSavingsNok ?? 0) > 0 && (
+                <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-emerald-200 bg-emerald-50/90 px-3 py-2 text-xs text-emerald-900">
+                  <span>
+                    Printer {quantity} stk på {activeQuote.pricingBreakdown.platesRequired ?? 1}{' '}
+                    Bambu X1C-byggeplate
+                    {(activeQuote.pricingBreakdown.platesRequired ?? 1) > 1 ? 'r' : ''} (256×256 mm)
+                  </span>
+                  <span className="font-mono font-bold text-emerald-700">
+                    Sparer {activeQuote.pricingBreakdown.batchSavingsNok} kr i oppstart!
+                  </span>
+                </div>
+              )}
             </fieldset>
 
             {/* OPTIONAL ADVANCED SETTINGS */}

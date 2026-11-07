@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createOpenSCAD } from 'openscad-wasm';
 import { z } from 'zod';
+import { mountOpenScadStdlib, sanitizeAndValidateScad } from '@/lib/three/openscad-stdlib';
 
 const execFileAsync = promisify(execFile);
 
@@ -89,6 +90,7 @@ async function compileWithWasmManifold(
   });
 
   const instance = scad.getInstance();
+  mountOpenScadStdlib(instance.FS);
   instance.FS.writeFile('/input.scad', effectiveSource);
 
   const exitCode = instance.callMain([
@@ -211,7 +213,10 @@ export async function POST(request: Request) {
     }
 
     const { scadSource, parameters, fastPreview } = parsed.data;
-    const effectiveSource = fastPreview ? optimizeScadSourceForPreview(scadSource) : scadSource;
+    const sanitizedSource = sanitizeAndValidateScad(scadSource);
+    const effectiveSource = fastPreview
+      ? optimizeScadSourceForPreview(sanitizedSource)
+      : sanitizedSource;
 
     const dArgs: string[] = [];
     for (const [key, val] of Object.entries(parameters)) {
@@ -220,6 +225,12 @@ export async function POST(request: Request) {
         dArgs.push('-D', `${key}=${val}`);
       } else if (typeof val === 'boolean') {
         dArgs.push('-D', `${key}=${val ? 'true' : 'false'}`);
+      } else if (typeof val === 'string') {
+        const safeStr = val
+          .replace(/["\\]/g, '')
+          .replace(/[\r\n]/g, ' ')
+          .slice(0, 32);
+        dArgs.push('-D', `${key}="${safeStr}"`);
       }
     }
 

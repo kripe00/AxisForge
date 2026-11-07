@@ -28,6 +28,7 @@ export async function POST(request: Request) {
       colorHex,
       layerQuality,
       infillPercent,
+      quantity,
       overrideBoundingBoxMm,
       overrideVolumeCm3,
       overrideOverhangRatio,
@@ -111,12 +112,16 @@ export async function POST(request: Request) {
       );
     }
 
-    // 2. Run Pay-Per-Model deterministic calculateModelPrice()
+    const qty = Math.min(25, Math.max(1, quantity ?? 1));
+
+    // 2. Run Pay-Per-Model deterministic calculateModelPrice() with batch quantity
     const pricingBreakdown = calculateModelPrice({
       filamentGrams: sliceResult.filamentGrams,
       printTimeSeconds: sliceResult.printTimeSeconds,
       material,
       layerQuality,
+      quantity: qty,
+      dimensionsMm: sliceResult.targetDimensionsMm,
     });
 
     const now = new Date();
@@ -133,9 +138,10 @@ export async function POST(request: Request) {
       layerQuality,
       layerHeightMm: sliceResult.layerHeightMm,
       infillPercent,
-      filamentGrams: sliceResult.filamentGrams,
-      supportGrams: sliceResult.supportGrams,
-      printTimeSeconds: sliceResult.printTimeSeconds,
+      quantity: qty,
+      filamentGrams: Number((sliceResult.filamentGrams * qty).toFixed(1)),
+      supportGrams: Number((sliceResult.supportGrams * qty).toFixed(1)),
+      printTimeSeconds: Math.round(sliceResult.printTimeSeconds * qty),
       layerCount: sliceResult.layerCount,
       supportRequired: sliceResult.supportRequired,
       brimEnabled: sliceResult.brimEnabled,

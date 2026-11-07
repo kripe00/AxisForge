@@ -2,7 +2,10 @@ export interface ScadParameterDef {
   name: string;
   label: string;
   group: string;
+  type?: 'number' | 'string';
   defaultValue: number;
+  defaultString?: string;
+  maxLength?: number;
   min: number;
   max: number;
   step: number;
@@ -12,6 +15,7 @@ export interface ScadParameterDef {
 
 function formatIdentifierToLabel(identifier: string): string {
   return identifier
+    .toLowerCase()
     .replace(/_mm$/i, '')
     .replace(/_deg$/i, '')
     .replace(/[_-]+/g, ' ')
@@ -25,14 +29,33 @@ function inferUnitFromNameAndLabel(name: string, label: string): string {
     combined.includes('antall') ||
     combined.includes('rows') ||
     combined.includes('cols') ||
+    combined.includes('columns') ||
     combined.includes('num_') ||
     combined.includes('slots') ||
-    combined.includes('holes')
+    combined.includes('holes') ||
+    combined.includes('grid_x') ||
+    combined.includes('grid_y') ||
+    combined.includes('height_units') ||
+    combined.includes('compartments') ||
+    combined.includes('dividers') ||
+    combined.includes('latches') ||
+    combined.includes('facets') ||
+    combined.includes('waves') ||
+    combined.includes('knurl')
   ) {
     return 'stk';
   }
-  if (combined.includes('angle') || combined.includes('vinkel') || combined.includes('deg')) {
+  if (
+    combined.includes('angle') ||
+    combined.includes('vinkel') ||
+    combined.includes('deg') ||
+    combined.includes('twist') ||
+    combined.includes('rotasjon')
+  ) {
     return '°';
+  }
+  if (combined.includes('percent') || combined.includes('prosent') || combined.includes('%')) {
+    return '%';
   }
   return 'mm';
 }
@@ -126,7 +149,7 @@ export function parseScadParameters(scadSource: string): ScadParameterDef[] {
 
     // Stop scanning top-level customizer variables once geometry modules/primitives begin
     if (
-      /^(module|function|union|difference|intersection|hull|minkowski|translate|rotate|scale|mirror|cube|cylinder|sphere|polyhedron|linear_extrude|rotate_extrude)\b/.test(
+      /^(module|function|union|difference|intersection|hull|minkowski|translate|rotate|scale|mirror|cube|cylinder|sphere|polyhedron|linear_extrude|rotate_extrude|cuboid|cyl|tube|rect_tube|up|down|left|right|fwd|back|for|if)\b/.test(
         line
       )
     ) {
@@ -144,6 +167,46 @@ export function parseScadParameters(scadSource: string): ScadParameterDef[] {
 
     // Skip special OpenSCAD rendering variables like $fn = 64;
     if (line.startsWith('$')) {
+      pendingComment = null;
+      continue;
+    }
+
+    // Match top-level string assignment: CUSTOM_TEXT = "SINDRE"; // [12]
+    const stringMatch = line.match(
+      /^([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*"([^"]*)"\s*;(?:\s*\/\/\s*(.*))?$/
+    );
+
+    if (stringMatch) {
+      const varName = stringMatch[1]!;
+      const defaultString = stringMatch[2] ?? '';
+      const inlineComment = stringMatch[3]?.trim() || '';
+
+      if (!varName.startsWith('_')) {
+        let label = pendingComment || formatIdentifierToLabel(varName);
+        if (!pendingComment && inlineComment && !inlineComment.startsWith('[')) {
+          label = inlineComment;
+        }
+        let maxLength = 16;
+        const maxLenMatch = inlineComment.match(/\[(\d+)\]/);
+        if (maxLenMatch && maxLenMatch[1]) {
+          maxLength = Math.min(32, Math.max(1, parseInt(maxLenMatch[1], 10)));
+        }
+
+        params.push({
+          name: varName,
+          label,
+          group: currentGroup,
+          type: 'string',
+          defaultValue: 0,
+          defaultString,
+          maxLength,
+          min: 0,
+          max: maxLength,
+          step: 1,
+          unit: 'tekst',
+        });
+      }
+
       pendingComment = null;
       continue;
     }
@@ -220,6 +283,7 @@ export function parseScadParameters(scadSource: string): ScadParameterDef[] {
         name: varName,
         label,
         group: currentGroup,
+        type: 'number',
         defaultValue,
         min,
         max,
