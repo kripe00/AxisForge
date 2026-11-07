@@ -1,0 +1,38 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --canvas-bg: #f6f6f3;
+  --ink-black: #141413;
+  --signal-orange: #ff4f00;
+}
+
+body {
+  background-color: var(--canvas-bg);
+  color: var(--ink-black);
+}
+
+/* Native <dialog> modal scroll containment (per modern-web-guidance dialog) */
+dialog:modal {
+  overscroll-behavior: contain;
+}
+
+dialog::backdrop {
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+
+/* Refined focus outlines for Nordic Hardware aesthetic */
+input:focus-visible,
+textarea:focus-visible,
+button:focus-visible,
+select:focus-visible {
+  outline: 2px solid #ff4f00;
+  outline-offset: 2px;
+}
+
+/* Custom subtle range slider styling */
+input[type='range'] {
+  accent-color: #141413;
+}

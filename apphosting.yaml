@@ -1,0 +1,23 @@
+runConfig:
+  minInstances: 0
+  maxInstances: 10
+  concurrency: 80
+  cpu: 1
+  memoryMiB: 1024
+
+env:
+  - variable: NEXT_PUBLIC_DEV_MOCK_MODE
+    value: "false"
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_PROJECT_ID
+    secret: firebase-project-id
+  - variable: TRIPO_API_KEY
+    secret: tripo-api-key
+    availability:
+      - RUNTIME
+  - variable: BAMBU_SLICER_CLI_PATH
+    value: "/usr/local/bin/bambu-studio-cli"
+    availability:
+      - RUNTIME
